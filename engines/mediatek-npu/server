@@ -37,9 +37,11 @@ fi
 port="$(modelctl get http.port)"
 host="$(modelctl get http.host)"
 
-sed "s#\$SNAP_COMPONENT_DIR#$SNAP_COMPONENTS/model-8b-mediatek#g" \
-  "$MODEL_CONFIG_TEMPLATE" \
-  > "$TMPDIR/model-8b-mediatek-config.yaml"
+model_component_dir="$SNAP_COMPONENTS/model-${MODEL_ID#qwen3-}"
+
+sed "s#\$SNAP_COMPONENT_DIR#$model_component_dir#g" \
+  "$model_component_dir/config.yaml" \
+  > "$TMPDIR/model-config.yaml"
 
 preformatter_args=()
 if [ -n "${MODEL_PREFORMATTER:-}" ]; then
@@ -50,7 +52,7 @@ set -x
 exec "${SNAP}/mediatek-npu-2404/bin/mediatek-genio-npu-wrapper" python -m model-server \
    --host "$host" \
    --port "$port" \
-   --config-path "$TMPDIR/model-8b-mediatek-config.yaml" \
+   --config-path "$TMPDIR/model-config.yaml" \
    --model-id "$MODEL_ID" \
    --default-max-tokens "$MODEL_MAX_TOKENS" \
    "${preformatter_args[@]}"

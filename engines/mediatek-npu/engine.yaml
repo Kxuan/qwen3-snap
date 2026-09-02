@@ -14,6 +14,9 @@ devices:
 runtime: mediatek-llm-proxy
 
 model:
-  default: qwen3-8b-mediatek
+  default: qwen3-1-7b-mediatek
   options:
+    - qwen3-0-6b-mediatek
+    - qwen3-1-7b-mediatek
+    - qwen3-4b-mediatek
     - qwen3-8b-mediatek

@@ -6,9 +6,13 @@ hf := pipx run --spec "huggingface_hub[cli]" hf
 SNAP_NAME ?= qwen3
 ENGINE ?= cpu
 
-MEDIATEK_MODEL_URL := https://mediatek-aiot.s3.ap-southeast-1.amazonaws.com/aiot/download/iot-ai-hub/model-zoo/gai/genio-360-360p-420-520-720/qwen3-8b.zip
+MEDIATEK_MODEL_BASE_URL := https://mediatek-aiot.s3.ap-southeast-1.amazonaws.com/aiot/download/iot-ai-hub/model-zoo/gai/genio-360-360p-420-520-720
+# Snap-safe component-name stems for each MediaTek model size (dots aren't
+# allowed in snap/component names, so sizes like "1.7b" become "1-7b").
+MEDIATEK_MODEL_SIZES := 0-6b 1-7b 4b 8b
+MEDIATEK_MODEL_TARGETS := $(addsuffix -mediatek,$(addprefix download-model-,$(MEDIATEK_MODEL_SIZES)))
 
-.PHONY: all help init build install upload smoke-test install-deps init-submodules download-models download-model-8b download-model-8b-mediatek
+.PHONY: all help init build install upload smoke-test install-deps init-submodules download-models download-model-8b download-model-%-mediatek
 
 all: help
 
@@ -50,6 +54,11 @@ install-deps:
 		sudo apt-get update; \
 		sudo apt-get install -y pipx; \
 	}
+	@command -v bsdtar >/dev/null 2>&1 || { \
+		sudo apt-get update; \
+		sudo apt-get install -y libarchive-tools; \
+	}
+
 
 init-submodules:
 	@echo "Initializing submodules..."
@@ -57,27 +66,26 @@ init-submodules:
 		git submodule update --init; \
 	fi
 
-download-models: download-model-8b download-model-8b-mediatek
+download-models: download-model-8b $(MEDIATEK_MODEL_TARGETS)
 
 download-model-8b:
 	@echo "Downloading Qwen3-8B-Q4_K_M model weights..."
 	$(hf) download unsloth/Qwen3-8B-GGUF Qwen3-8B-Q4_K_M.gguf \
 		--local-dir components/model-8b-q4-k-m-gguf/
 
-download-model-8b-mediatek:
-	@echo "Downloading MediaTek NPU-optimized Qwen3-8B model weights..."
-	@command -v bsdtar >/dev/null 2>&1 || { \
-		sudo apt-get update; \
-		sudo apt-get install -y libarchive-tools; \
-	}
-	rm -rf components/model-8b-mediatek
-	mkdir -p components/model-8b-mediatek
-	set -o pipefail && curl -L "$(MEDIATEK_MODEL_URL)" \
-		| bsdtar -xf - -C components/model-8b-mediatek --strip-components=1 \
-			'qwen3-8b/2048c/*' 'qwen3-8b/tokenizer/*' 'qwen3-8b/scripts/config-yocto_np8-qwen3-8b.yaml'
+# Downloads a MediaTek NPU-optimized Qwen3 model package. The stem (e.g.
+# "1-7b") is the snap-safe component name; MediaTek's own zip/path naming
+# uses dots instead of hyphens (e.g. "1.7b"), recovered via $(subst -,.,$*).
+download-model-%-mediatek:
+	@echo "Downloading MediaTek NPU-optimized Qwen3-$(subst -,.,$*) model weights..."
+	rm -rf components/model-$*-mediatek
+	mkdir -p components/model-$*-mediatek
+	set -o pipefail && curl -L "$(MEDIATEK_MODEL_BASE_URL)/qwen3-$(subst -,.,$*).zip" \
+		| bsdtar -xf - -C components/model-$*-mediatek --strip-components=1 \
+			'qwen3-$(subst -,.,$*)/2048c/*' 'qwen3-$(subst -,.,$*)/tokenizer/*' 'qwen3-$(subst -,.,$*)/scripts/config-yocto_np8-qwen3-$(subst -,.,$*)*.yaml'
 	# Swap MediaTek's baked-in Yocto rootfs path for the $$SNAP_COMPONENT_DIR
 	# placeholder that engines/mediatek-npu/server substitutes at runtime.
-	sed 's#/usr/share/llm/qwen3-8b#$$SNAP_COMPONENT_DIR#g' \
-		components/model-8b-mediatek/scripts/config-yocto_np8-qwen3-8b.yaml \
-		> components/model-8b-mediatek/config.yaml
-	rm -rf components/model-8b-mediatek/scripts
+	sed 's#/usr/share/llm/qwen3-$(subst -,.,$*)#$$SNAP_COMPONENT_DIR#g' \
+		components/model-$*-mediatek/scripts/config-yocto_np8-qwen3-$(subst -,.,$*)*.yaml \
+		> components/model-$*-mediatek/config.yaml
+	rm -rf components/model-$*-mediatek/scripts
